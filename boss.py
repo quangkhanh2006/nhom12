@@ -9,8 +9,10 @@ import math
 import random
 import pygame
 from settings import (
-    BOSS_HP, BOSS_DAMAGE, BOSS_SPEED_P1, BOSS_SPEED_P2, BOSS_DETECT_RANGE,
+    BOSS_HP, BOSS_DAMAGE, BOSS_SPEED_P1, BOSS_SPEED_P2, BOSS_SPEED_P3, BOSS_DETECT_RANGE,
     BOSS_SUMMON_INTERVAL, BOSS_AOE_RADIUS, BOSS_AOE_COOLDOWN, BOSS_SIZE,
+    BOSS_PHASE2_THRESHOLD, BOSS_PHASE3_THRESHOLD,
+    BOSS_SPIRAL_COUNT, BOSS_SPIRAL_COOLDOWN,
     COLOR_BOSS, COLOR_BOSS_GLOW, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT,
     PLAYER_ATTACK_KNOCKBACK, RED, WHITE, YELLOW,
     BOSS_DASH_COOLDOWN, BOSS_DASH_SPEED, BOSS_DASH_DURATION, BOSS_DASH_DAMAGE, BOSS_DASH_RANGE,
@@ -82,6 +84,9 @@ class Boss:
         self.phase_transition = False
         self.transition_timer = 0
         self.transition_duration = 2000
+        self.rage_shake = 0  # Phase 3 screen shake counter
+        self.spiral_timer = 0  # Phase 3 spiral shot timer
+        self.spiral_angle = 0.0  # Phase 3 spiral angle
 
         # Summoned enemies (returned to game_state for management)
         self.pending_summons = []
@@ -109,9 +114,17 @@ class Boss:
             self.knockback_timer = pygame.time.get_ticks()
 
         # Phase transition: HP < 50%
-        if self.phase == 1 and self.hp <= self.max_hp * 0.5:
+        if self.phase == 1 and self.hp <= self.max_hp * BOSS_PHASE2_THRESHOLD:
             self.phase = 2
             self.speed = BOSS_SPEED_P2
+            self.phase_transition = True
+            self.transition_timer = pygame.time.get_ticks()
+
+        # Phase 3 Rage: HP < 25%
+        if self.phase == 2 and self.hp <= self.max_hp * BOSS_PHASE3_THRESHOLD:
+            self.phase = 3
+            self.speed = BOSS_SPEED_P3
+            self.attack_cooldown = 600  # Melee nhanh gấp đôi
             self.phase_transition = True
             self.transition_timer = pygame.time.get_ticks()
 
@@ -194,8 +207,10 @@ class Boss:
 
         if self.phase == 1:
             self._phase1_ai(player, tile_map, walkable_grid, now, dist)
-        else:
+        elif self.phase == 2:
             self._phase2_ai(player, tile_map, walkable_grid, now, dist)
+        else:
+            self._phase3_ai(player, tile_map, walkable_grid, now, dist)
 
     def _fire_projectiles(self, player, count):
         """Bắn đạn bóng tối về phía player."""
@@ -344,6 +359,77 @@ class Boss:
                     self.pending_summons.append(("minion", sx, sy))
                     break
 
+    def _fire_spiral(self):
+        """Phase 3: Bắn đạn xoáy 360° (spiral projectiles)."""
+        count = BOSS_SPIRAL_COUNT
+        for i in range(count):
+            ang = self.spiral_angle + (2 * math.pi * i / count)
+            self.projectiles.append({
+                'x': self.x, 'y': self.y,
+                'dx': math.cos(ang) * BOSS_PROJ_SPEED * 1.3,
+                'dy': math.sin(ang) * BOSS_PROJ_SPEED * 1.3,
+                'traveled': 0
+            })
+        self.spiral_angle += 0.4  # Xoay góc mỗi lần bắn → tạo hình xoắn ốc
+
+    def _phase3_ai(self, player, tile_map, walkable_grid, now, dist):
+        """Phase 3 — Rage Mode: Tốc độ kinh hoàng, bắn xoáy liên tục, AoE nhanh."""
+        # A* pathfinding (cập nhật nhanh hơn Phase 2)
+        if now - self.path_timer > 250:
+            self.path_timer = now
+            self.path, self.visited = astar_find_path(self.x, self.y, player.x, player.y, walkable_grid)
+            self.path_index = 0
+
+        # Follow path
+        if self.path and self.path_index < len(self.path):
+            tx, ty = self.path[self.path_index]
+            d = distance_between(self.x, self.y, tx, ty)
+            if d < self.speed * 2:
+                self.path_index += 1
+            else:
+                dx, dy = get_direction_towards(self.x, self.y, tx, ty, self.speed)
+                half = self.size // 2
+                new_x = self.x + dx
+                new_y = self.y + dy
+                if tile_map.is_walkable(new_x - half, new_y) and tile_map.is_walkable(new_x + half, new_y):
+                    self.x = max(half, min(MAP_WIDTH * TILE_SIZE - half, new_x))
+                if tile_map.is_walkable(self.x, new_y - half) and tile_map.is_walkable(self.x, new_y + half):
+                    self.y = max(half, min(MAP_HEIGHT * TILE_SIZE - half, new_y))
+
+        # Spiral shots — bắn xoáy liên tục
+        if now - self.spiral_timer > BOSS_SPIRAL_COOLDOWN:
+            self.spiral_timer = now
+            self._fire_spiral()
+
+        # AoE nhanh hơn
+        if now - self.aoe_timer > BOSS_AOE_COOLDOWN * 0.6:
+            self.aoe_timer = now
+            self.aoe_active = True
+            self.aoe_progress = 0
+
+        if self.aoe_active:
+            self.aoe_progress += 0.03
+            if self.aoe_progress >= 1.0:
+                self.aoe_active = False
+                if dist < BOSS_AOE_RADIUS * 1.3:
+                    player.take_damage(self.damage + 10)
+
+        # Dash cực nhanh
+        if now - self.dash_timer > BOSS_DASH_COOLDOWN * 0.5 and dist < BOSS_DASH_RANGE * 1.2:
+            self.dash_timer = now
+            self._start_dash(player)
+            return
+
+        # Teleport liên tục
+        if now - self.tele_timer > BOSS_TELE_COOLDOWN * 0.6 and dist > 100:
+            self.tele_timer = now
+            self._teleport_behind(player, tile_map)
+
+        # Melee nhanh
+        if dist < 55 and now - self.last_attack > self.attack_cooldown:
+            self.last_attack = now
+            player.take_damage(self.damage + 5)
+
     def get_pending_summons(self):
         """Lấy và xóa danh sách quái chờ triệu hồi."""
         summons = self.pending_summons.copy()
@@ -368,12 +454,13 @@ class Boss:
             radius = int(120 * progress)
             flash_surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
             alpha = int(max(0, min(255, 200 * (1 - progress))))
-            pygame.draw.circle(flash_surf, (255, 60, 20, alpha), (radius, radius), radius)
+            phase_label = "PHASE 3 — RAGE!" if self.phase == 3 else "PHASE 2"
+            phase_color = (255, 30, 30) if self.phase == 3 else (255, 60, 20)
+            pygame.draw.circle(flash_surf, (*phase_color, alpha), (radius, radius), radius)
             surface.blit(flash_surf, (sx - radius, sy - radius))
-            # Text "PHASE 2" (BUG FIX: dùng cached font)
             if self._transition_font is None:
                 self._transition_font = pygame.font.SysFont("consolas", 28, bold=True)
-            text = self._transition_font.render("PHASE 2", True, (255, 100, 50))
+            text = self._transition_font.render(phase_label, True, phase_color)
             text.set_alpha(alpha)
             surface.blit(text, (sx - text.get_width() // 2, sy - 80))
             return

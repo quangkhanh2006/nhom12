@@ -181,32 +181,40 @@ SHADOW_DETECT_RANGE = 350
 SHADOW_EXP          = 30
 
 # ======================== BOSS — MALPHAS ========================
-BOSS_HP             = 600      # Tăng mạnh từ 350 → 600
-BOSS_DAMAGE         = 25       # Tăng từ 15 → 25
-BOSS_SPEED_P1       = 2.2      # Phase 1 nhanh hơn (tăng từ 1.8 → 2.2)
-BOSS_SPEED_P2       = 4.0      # Phase 2 tốc độ ác mộng (tăng từ 3.0 → 4.0)
-BOSS_DETECT_RANGE   = 500
-BOSS_SUMMON_INTERVAL = 7000    # Triệu hồi quái mỗi 7 giây
-BOSS_AOE_RADIUS     = 120      # Bán kính AoE boss
-BOSS_AOE_COOLDOWN   = 5000     # Cooldown AoE boss
-BOSS_SIZE           = 48       # Kích thước boss (px)
-BOSS_EXP            = 150
+BOSS_HP             = 900      # Phase 2 buff: 600 → 900
+BOSS_DAMAGE         = 35       # 25 → 35
+BOSS_SPEED_P1       = 2.5      # 2.2 → 2.5
+BOSS_SPEED_P2       = 5.0      # 4.0 → 5.0
+BOSS_SPEED_P3       = 6.5      # Phase 3 Rage Mode
+BOSS_DETECT_RANGE   = 600      # Phát hiện player từ xa hơn
+BOSS_SUMMON_INTERVAL = 5000    # Triệu hồi quái nhanh hơn: 7000 → 5000ms
+BOSS_AOE_RADIUS     = 150      # 120 → 150
+BOSS_AOE_COOLDOWN   = 3500     # 5000 → 3500ms
+BOSS_SIZE           = 48
+BOSS_EXP            = 200      # Thưởng nhiều EXP hơn
+
+# Boss Phase thresholds
+BOSS_PHASE2_THRESHOLD = 0.50   # HP < 50% → Phase 2
+BOSS_PHASE3_THRESHOLD = 0.25   # HP < 25% → Phase 3 Rage
 
 # Boss Skills
-BOSS_DASH_COOLDOWN  = 4000     # Cooldown lao tới (ms)
-BOSS_DASH_SPEED     = 10       # Tốc độ lao tới
-BOSS_DASH_DURATION  = 400      # Thời gian lao (ms)
-BOSS_DASH_DAMAGE    = 35       # Tăng mạnh sát thương lao từ 20 → 35
-BOSS_DASH_RANGE     = 250      # Tầm kích hoạt dash (chỉ dash khi đủ gần)
+BOSS_DASH_COOLDOWN  = 3000     # 4000 → 3000ms
+BOSS_DASH_SPEED     = 12       # 10 → 12
+BOSS_DASH_DURATION  = 350
+BOSS_DASH_DAMAGE    = 45       # 35 → 45
+BOSS_DASH_RANGE     = 300      # 250 → 300
 
-BOSS_PROJ_COOLDOWN  = 3000     # Cooldown bắn đạn (ms)
-BOSS_PROJ_COUNT     = 5        # Số đạn mỗi lần bắn (Phase 1: 3, Phase 2: 5)
-BOSS_PROJ_SPEED     = 4        # Tốc độ đạn
-BOSS_PROJ_DAMAGE    = 18       # Tăng sát thương mỗi viên đạn từ 10 → 18
-BOSS_PROJ_RANGE     = 300      # Tầm bắn đạn
+BOSS_PROJ_COOLDOWN  = 2000     # 3000 → 2000ms
+BOSS_PROJ_COUNT     = 8        # 5 → 8 đạn Phase 2
+BOSS_PROJ_SPEED     = 5        # 4 → 5
+BOSS_PROJ_DAMAGE    = 22       # 18 → 22
+BOSS_PROJ_RANGE     = 350
 
-BOSS_TELE_COOLDOWN  = 8000     # Cooldown teleport (ms) — chỉ Phase 2
-BOSS_TELE_DISTANCE  = 60       # Khoảng cách xuất hiện sau lưng player
+BOSS_SPIRAL_COUNT   = 12       # Số đạn xoáy Phase 3
+BOSS_SPIRAL_COOLDOWN = 1500    # Cooldown bắn xoáy Phase 3 (ms)
+
+BOSS_TELE_COOLDOWN  = 6000     # 8000 → 6000ms
+BOSS_TELE_DISTANCE  = 60
 
 # ======================== TRANG BỊ & LOOT ========================
 # Tỉ lệ rơi theo rarity

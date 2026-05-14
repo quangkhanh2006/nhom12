@@ -778,3 +778,216 @@ class UI:
     def reset_fog(self):
         """Reset fog of war khi chuyển chương."""
         self.explored = set()
+
+    # ================================================================
+    # AI Visualizer — Legend & Path Overlay
+    # ================================================================
+
+    def render_ai_legend(self, surface):
+        """Vẽ bảng chú giải thuật toán AI góc phải trên màn hình."""
+        self._init_fonts()
+        panel_w, panel_h = 250, 140
+        px = surface.get_width() - panel_w - 10
+        py = 10
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        panel.fill((10, 8, 20, 200))
+        pygame.draw.rect(panel, (80, 80, 120, 160), (0, 0, panel_w, panel_h), 1, 8)
+        surface.blit(panel, (px, py))
+
+        title = self._small_font.render("[ F3 ] AI Pathfinding Debug", True, (200, 200, 255))
+        surface.blit(title, (px + 8, py + 6))
+
+        # Separator
+        pygame.draw.line(surface, (80, 80, 120), (px + 6, py + 20), (px + panel_w - 6, py + 20))
+
+        legends = [
+            ("DFS", "Linh Hồn Lang Thang", (180, 80, 255)),   # purple
+            ("BFS", "Tay Sai Malphas",     (60, 160, 255)),   # blue
+            ("A* ", "Hình Bóng Ký Ức",     (255, 220, 40)),   # yellow
+        ]
+        for i, (algo, desc, color) in enumerate(legends):
+            y = py + 28 + i * 34
+            # Color swatch
+            pygame.draw.rect(surface, color, (px + 8, y + 4, 16, 16), 0, 3)
+            pygame.draw.rect(surface, (255, 255, 255), (px + 8, y + 4, 16, 16), 1, 3)
+            # Algo name
+            name_txt = self._small_font.render(algo, True, color)
+            surface.blit(name_txt, (px + 30, y + 2))
+            # Description
+            desc_txt = self._small_font.render(desc, True, (160, 155, 190))
+            surface.blit(desc_txt, (px + 30, y + 16))
+
+        # Heuristic hint
+        try:
+            import ai
+            h_text = self._small_font.render(
+                f"Heuristic A*: {ai.CURRENT_HEURISTIC.upper()}  [H]",
+                True, (180, 180, 130))
+        except Exception:
+            h_text = self._small_font.render("Heuristic: MANHATTAN", True, (180, 180, 130))
+        surface.blit(h_text, (px + 8, py + panel_h - 18))
+
+    def render_algo_overlay(self, surface, enemies, boss, camera, tile_map):
+        """Tô màu đường đi/visited của từng quái theo thuật toán."""
+        TILE_SIZE = 32
+        algo_colors = {
+            "soul":   (160, 60, 255, 45),   # DFS — tím mờ
+            "minion": (40, 140, 255, 45),    # BFS — xanh mờ
+            "shadow": (255, 200, 20, 45),    # A*  — vàng mờ
+        }
+        path_colors = {
+            "soul":   (200, 100, 255),
+            "minion": (80, 180, 255),
+            "shadow": (255, 230, 60),
+        }
+
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            color_v = algo_colors.get(enemy.enemy_type)
+            color_p = path_colors.get(enemy.enemy_type)
+            if not color_v:
+                continue
+
+            # Vẽ visited tiles (mờ)
+            visited = getattr(enemy, 'visited', set())
+            for (tx, ty) in visited:
+                wx = tx * TILE_SIZE
+                wy = ty * TILE_SIZE
+                if camera.is_visible(wx, wy):
+                    sx, sy = camera.apply(wx + TILE_SIZE // 2, wy + TILE_SIZE // 2)
+                    tile_surf = pygame.Surface((TILE_SIZE - 2, TILE_SIZE - 2), pygame.SRCALPHA)
+                    tile_surf.fill(color_v)
+                    surface.blit(tile_surf, (sx - TILE_SIZE // 2 + 1, sy - TILE_SIZE // 2 + 1))
+
+            # Vẽ path (rõ hơn)
+            path = getattr(enemy, 'path', [])
+            for j, (px_w, py_w) in enumerate(path):
+                if camera.is_visible(px_w, py_w):
+                    sx, sy = camera.apply(px_w, py_w)
+                    r = max(2, 5 - j // 3)
+                    pygame.draw.circle(surface, color_p, (int(sx), int(sy)), r)
+
+            # Label thuật toán trên quái
+            algo_name = {"soul": "DFS", "minion": "BFS", "shadow": "A*"}.get(enemy.enemy_type, "")
+            if algo_name and camera.is_visible(enemy.x, enemy.y):
+                ex, ey = camera.apply(enemy.x, enemy.y)
+                try:
+                    label = self._small_font.render(algo_name, True, color_p)
+                    surface.blit(label, (int(ex) - label.get_width() // 2, int(ey) - 28))
+                except Exception:
+                    pass
+
+    # ================================================================
+    # Settings Menu — Mouse-driven slider
+    # ================================================================
+
+    def get_settings_rects(self, screen_w, screen_h):
+        """Trả về dict rect của các element trong Settings menu."""
+        cx = screen_w // 2
+        cy = screen_h // 2
+        panel_w, panel_h = 420, 320
+        px = cx - panel_w // 2
+        py = cy - panel_h // 2
+        slider_w = 220
+
+        return {
+            'panel':      pygame.Rect(px, py, panel_w, panel_h),
+            'close':      pygame.Rect(px + panel_w - 30, py + 6, 24, 24),
+            'sfx_track':  pygame.Rect(cx - slider_w // 2, cy - 60, slider_w, 10),
+            'bgm_track':  pygame.Rect(cx - slider_w // 2, cy + 10, slider_w, 10),
+            'sfx_mute':   pygame.Rect(cx + slider_w // 2 + 12, cy - 64, 50, 20),
+            'bgm_mute':   pygame.Rect(cx + slider_w // 2 + 12, cy + 6, 50, 20),
+        }
+
+    def render_settings_mouse(self, surface, sfx_vol, bgm_vol, sfx_muted, bgm_muted):
+        """Vẽ Settings panel với slider kéo được bằng chuột."""
+        self._init_fonts()
+        sw, sh = surface.get_width(), surface.get_height()
+        rects = self.get_settings_rects(sw, sh)
+        pr = rects['panel']
+
+        # Overlay mờ
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        surface.blit(overlay, (0, 0))
+
+        # Panel
+        panel = pygame.Surface((pr.width, pr.height), pygame.SRCALPHA)
+        panel.fill((18, 22, 38, 230))
+        pygame.draw.rect(panel, (100, 130, 200, 200), (0, 0, pr.width, pr.height), 2, 14)
+        # Highlight top edge
+        for i in range(3):
+            pygame.draw.line(panel, (160, 180, 255, 40 - i * 12),
+                             (10, i + 2), (pr.width - 10, i + 2))
+        surface.blit(panel, (pr.x, pr.y))
+
+        # Title
+        title = self._title_font.render("CÀI ĐẶT", True, (220, 230, 255))
+        surface.blit(title, (sw // 2 - title.get_width() // 2, pr.y + 18))
+
+        # Separator
+        sep_y = pr.y + 70
+        pygame.draw.line(surface, (80, 100, 160), (pr.x + 20, sep_y), (pr.x + pr.width - 20, sep_y))
+
+        def draw_slider(label, track_rect, vol, muted, mute_rect):
+            # Label
+            lbl = self._font.render(label, True, (200, 210, 240))
+            surface.blit(lbl, (track_rect.x, track_rect.y - 22))
+
+            # Track background
+            pygame.draw.rect(surface, (30, 35, 55), track_rect, 0, 5)
+            pygame.draw.rect(surface, (60, 70, 100), track_rect, 1, 5)
+
+            # Fill
+            fill_w = int(track_rect.width * vol)
+            if fill_w > 0 and not muted:
+                fill_rect = pygame.Rect(track_rect.x, track_rect.y, fill_w, track_rect.height)
+                fill_surf = pygame.Surface((fill_w, track_rect.height), pygame.SRCALPHA)
+                for i in range(fill_w):
+                    prog = i / track_rect.width
+                    r = int(80 + 100 * prog)
+                    g = int(120 + 100 * prog)
+                    b = int(220)
+                    pygame.draw.line(fill_surf, (r, g, b, 220), (i, 0), (i, track_rect.height))
+                surface.blit(fill_surf, (track_rect.x, track_rect.y))
+                pygame.draw.rect(surface, (100, 150, 255), fill_rect, 0, 5)
+
+            # Thumb
+            thumb_x = track_rect.x + int(track_rect.width * vol)
+            thumb_color = (80, 80, 100) if muted else (160, 200, 255)
+            pygame.draw.circle(surface, thumb_color,
+                               (thumb_x, track_rect.centery), 8)
+            pygame.draw.circle(surface, (220, 235, 255),
+                               (thumb_x, track_rect.centery), 8, 2)
+
+            # Volume percent
+            pct = f"{'MUTE' if muted else f'{int(vol*100)}%'}"
+            pct_txt = self._small_font.render(pct, True,
+                                              (120, 120, 140) if muted else (180, 210, 255))
+            surface.blit(pct_txt, (track_rect.x + track_rect.width + 8, track_rect.y - 2))
+
+            # Mute button
+            mute_color = (200, 60, 60) if muted else (50, 160, 80)
+            pygame.draw.rect(surface, mute_color, mute_rect, 0, 5)
+            pygame.draw.rect(surface, (255, 255, 255), mute_rect, 1, 5)
+            m_txt = self._small_font.render("MUTE" if not muted else "ON", True, (255, 255, 255))
+            surface.blit(m_txt, (mute_rect.x + mute_rect.width // 2 - m_txt.get_width() // 2,
+                                 mute_rect.y + mute_rect.height // 2 - m_txt.get_height() // 2))
+
+        draw_slider("🔊 Âm hiệu ứng (SFX)",
+                    rects['sfx_track'], sfx_vol, sfx_muted, rects['sfx_mute'])
+        draw_slider("🎵 Nhạc nền (BGM)",
+                    rects['bgm_track'], bgm_vol, bgm_muted, rects['bgm_mute'])
+
+        # Hint
+        hint = self._small_font.render("Kéo thanh để điều chỉnh âm lượng  •  ESC để đóng", True, (110, 115, 140))
+        surface.blit(hint, (sw // 2 - hint.get_width() // 2, pr.y + pr.height - 36))
+
+        # Close button [X]
+        cr = rects['close']
+        pygame.draw.rect(surface, (180, 50, 50), cr, 0, 5)
+        x_txt = self._font.render("✕", True, (255, 255, 255))
+        surface.blit(x_txt, (cr.x + cr.width // 2 - x_txt.get_width() // 2,
+                              cr.y + cr.height // 2 - x_txt.get_height() // 2))
+

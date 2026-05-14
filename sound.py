@@ -21,7 +21,7 @@ BIT_DEPTH   = -16     # 16-bit signed
 
 # Volume (0.0 → 1.0)
 SFX_VOLUME   = 0.45
-MUSIC_VOLUME = 0.20
+MUSIC_VOLUME = 0.45   # Tăng từ 0.20 → 0.45 để nghe rõ hơn
 
 _initialized = False
 _sounds: dict = {}        # Lưu Sound objects
@@ -281,72 +281,116 @@ def _sfx_trap():
 
 def _make_ambient_loop(chapter: int) -> pygame.mixer.Sound:
     """
-    Tạo nhạc nền ambient ngắn (~3s) cho mỗi chương.
-    Chapter 1 — tối tăm, chậm (C minor drone)
-    Chapter 2 — căng thẳng (dissonant)
-    Chapter 3 — rừng ma (mid freq hum)
-    Chapter 4 — huyền bí (ethereal)
-    Chapter 5 — boss (heavy bass)
+    Tạo nhạc nền ambient (~6s) với nhiều layer cho mỗi chương.
+    Ch.1 — Làng tàn  : drone C minor + chuông xa + tiếng gió
+    Ch.2 — Thành phố : nhịp đập căng + dissonant pad + bass pulse
+    Ch.3 — Rừng ma   : hum huyền bí + tiếng chim (glitch sine) + shimmer
+    Ch.4 — Địa ngục  : rên rỉ + reverb dày + bass ác
+    Ch.5 — Boss       : trống trận + cymbal crash + bass kinh hoàng
     """
-    dur = 3.0
+    dur = 6.0
     sr = SAMPLE_RATE
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
 
     if chapter == 1:
-        # C minor drone — buồn, u ám
-        arr = (_sine(130.8, dur) * 0.25    # C3
-               + _sine(155.6, dur) * 0.15   # Eb3
-               + _sine(196.0, dur) * 0.10   # G3
-               + _noise(dur) * 0.04)
-        t = np.linspace(0, dur, int(sr * dur))
-        lfo = 0.8 + 0.2 * np.sin(2 * np.pi * 0.3 * t)
-        arr = (arr * lfo).astype(np.float32)
+        # --- Làng tàn ---
+        drone = (_sine(130.8, dur) * 0.50    # C3
+                 + _sine(155.6, dur) * 0.30   # Eb3
+                 + _sine(196.0, dur) * 0.20)  # G3
+        bell_env = np.exp(-t * 1.2) * np.abs(np.sin(2 * np.pi * t / 1.5))
+        bell = _sine(523.3, dur) * 0.18 * bell_env.astype(np.float32)
+        wind = _noise(dur) * 0.08
+        wind_env = (0.7 + 0.3 * np.sin(2 * np.pi * 0.2 * t)).astype(np.float32)
+        wind = wind * wind_env
+        lfo = (0.75 + 0.25 * np.sin(2 * np.pi * 0.18 * t)).astype(np.float32)
+        arr = (drone * lfo + bell + wind).astype(np.float32)
 
     elif chapter == 2:
-        # Dissonant city — căng thẳng
-        arr = (_sine(110.0, dur) * 0.20
-               + _sine(116.5, dur) * 0.15   # Bb2 — dissonant
-               + _sine(146.8, dur) * 0.10
-               + _noise(dur) * 0.05)
-        t = np.linspace(0, dur, int(sr * dur))
-        lfo = 0.8 + 0.2 * np.sin(2 * np.pi * 0.5 * t)
-        arr = (arr * lfo).astype(np.float32)
+        # --- Thành phố bị bao vây ---
+        beat_env = np.zeros(n, dtype=np.float32)
+        beat_period = int(sr * 0.5)
+        for i in range(0, n, beat_period):
+            seg_len = min(int(sr * 0.12), n - i)
+            env_seg = np.exp(-np.linspace(0, 8, seg_len))
+            beat_env[i:i+seg_len] += env_seg.astype(np.float32)
+        bass_pulse = _sine(55.0, dur) * 0.55 * beat_env
+        pad = (_sine(110.0, dur) * 0.30
+               + _sine(116.5, dur) * 0.22
+               + _sine(146.8, dur) * 0.18)
+        pad_lfo = (0.7 + 0.3 * np.sin(2 * np.pi * 0.4 * t)).astype(np.float32)
+        tension = _noise(dur) * 0.06
+        arr = (bass_pulse + pad * pad_lfo + tension).astype(np.float32)
 
     elif chapter == 3:
-        # Forest — mystical hum
-        arr = (_sine(174.6, dur) * 0.20    # F3
-               + _sine(220.0, dur) * 0.15   # A3
-               + _sine(261.6, dur) * 0.10   # C4
-               + _noise(dur) * 0.04)
-        t = np.linspace(0, dur, int(sr * dur))
-        lfo = 0.75 + 0.25 * np.sin(2 * np.pi * 0.4 * t)
-        arr = (arr * lfo).astype(np.float32)
+        # --- Rừng ma ---
+        hum = (_sine(174.6, dur) * 0.40
+               + _sine(220.0, dur) * 0.28
+               + _sine(261.6, dur) * 0.20
+               + _sine(349.2, dur) * 0.12)
+        hum_lfo = (0.65 + 0.35 * np.sin(2 * np.pi * 0.28 * t)).astype(np.float32)
+        bird = np.zeros(n, dtype=np.float32)
+        rng = np.random.default_rng(42)
+        for _ in range(8):
+            pos = rng.integers(0, n - sr//4)
+            chirp_len = int(sr * 0.08)
+            freq_chirp = rng.uniform(1200, 2400)
+            seg = _sine(freq_chirp, 0.08) * 0.20
+            seg_env = np.exp(-np.linspace(0, 6, chirp_len))
+            seg_len = min(len(seg), len(seg_env), n - pos)
+            bird[pos:pos+seg_len] += (seg[:seg_len] * seg_env[:seg_len]).astype(np.float32)
+        shimmer = _sine(1047, dur) * 0.06
+        shimmer_env = (0.5 + 0.5 * np.sin(2 * np.pi * 0.6 * t)).astype(np.float32)
+        arr = (hum * hum_lfo + bird + shimmer * shimmer_env).astype(np.float32)
 
     elif chapter == 4:
-        # Ethereal between-world
-        arr = (_sine(196.0, dur) * 0.15
-               + _sine(246.9, dur) * 0.15   # B3
-               + _sine(329.6, dur) * 0.12   # E4
-               + _noise(dur) * 0.03)
-        t = np.linspace(0, dur, int(sr * dur))
-        lfo = 0.7 + 0.3 * np.sin(2 * np.pi * 0.25 * t)
-        arr = (arr * lfo).astype(np.float32)
+        # --- Giữa hai thế giới ---
+        moan_lfo = np.sin(2 * np.pi * 0.05 * t)
+        moan_freq = 80 + 20 * moan_lfo
+        moan_phase = np.cumsum(2 * np.pi * moan_freq / sr).astype(np.float32)
+        moan = np.sin(moan_phase) * 0.45
+        pad = (_sine(196.0, dur) * 0.28
+               + _sine(246.9, dur) * 0.24
+               + _sine(329.6, dur) * 0.18)
+        pad_lfo = (0.6 + 0.4 * np.sin(2 * np.pi * 0.15 * t)).astype(np.float32)
+        rev = _noise(dur) * 0.05
+        rev_env = np.exp(-t * 0.3).astype(np.float32)
+        evil_bass = _sine(41.2, dur) * 0.45
+        evil_lfo = (0.8 + 0.2 * np.sin(2 * np.pi * 0.08 * t)).astype(np.float32)
+        arr = (moan + pad * pad_lfo + rev * (1 - rev_env) + evil_bass * evil_lfo).astype(np.float32)
 
     else:
-        # Chapter 5 — boss, heavy bass
-        arr = (_sine(55.0, dur) * 0.30     # A1
-               + _sine(73.4, dur) * 0.20    # D2
-               + _noise(dur) * 0.08
-               + _square(55.0, dur, duty=0.3) * 0.10)
-        t = np.linspace(0, dur, int(sr * dur))
-        lfo = 0.8 + 0.2 * np.sin(2 * np.pi * 0.6 * t)
-        arr = (arr * lfo).astype(np.float32)
+        # --- Boss Chapter 5 ---
+        beat_env = np.zeros(n, dtype=np.float32)
+        for i in range(0, n, int(sr * 0.5)):
+            seg_len = min(int(sr * 0.15), n - i)
+            env_seg = np.exp(-np.linspace(0, 10, seg_len))
+            beat_env[i:i+seg_len] += env_seg.astype(np.float32)
+        for i in range(int(sr * 0.25), n, int(sr * 0.5)):
+            seg_len = min(int(sr * 0.08), n - i)
+            env_seg = np.exp(-np.linspace(0, 12, seg_len)) * 0.5
+            beat_env[i:i+seg_len] += env_seg.astype(np.float32)
+        drum = _sine(50.0, dur) * 0.65 * beat_env
+        bass = (_sine(36.7, dur) * 0.50
+                + _square(36.7, dur, duty=0.2) * 0.25)
+        bass_lfo = (0.7 + 0.3 * np.sin(2 * np.pi * 0.4 * t)).astype(np.float32)
+        cymbal = np.zeros(n, dtype=np.float32)
+        for i in range(0, n, int(sr * 2.0)):
+            seg_len = min(int(sr * 0.3), n - i)
+            c_noise = np.random.uniform(-1, 1, seg_len).astype(np.float32)
+            c_env = np.exp(-np.linspace(0, 12, seg_len))
+            cymbal[i:i+seg_len] += (c_noise * c_env * 0.18).astype(np.float32)
+        theme = (_sine(55.0, dur) * 0.22
+                 + _sine(58.3, dur) * 0.18)
+        arr = (drum + bass * bass_lfo + cymbal + theme).astype(np.float32)
 
-    # Crossfade đầu/cuối để loop mượt
-    fade_len = int(0.1 * sr)
-    arr[:fade_len] *= np.linspace(0, 1, fade_len)
-    arr[-fade_len:] *= np.linspace(1, 0, fade_len)
+    # Crossfade đầu/cuối 0.3s để loop mượt
+    fade_len = int(0.3 * sr)
+    arr[:fade_len] *= np.linspace(0, 1, fade_len).astype(np.float32)
+    arr[-fade_len:] *= np.linspace(1, 0, fade_len).astype(np.float32)
 
     return _make_buffer(np.clip(arr, -1, 1))
+
 
 
 # ======================== BUILD TẤT CẢ ========================

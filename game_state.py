@@ -138,6 +138,12 @@ class GameState:
         # Debug AI
         self.debug_ai = False
 
+        # Settings mouse state
+        self.sfx_muted = False
+        self.bgm_muted = False
+        self._dragging_sfx = False
+        self._dragging_bgm = False
+
     def _init_fonts(self):
         if self._font is None:
             self._font = pygame.font.SysFont("consolas", 18)
@@ -972,26 +978,68 @@ class GameState:
                         self.state = STATE_PLAYING
                 elif event.key == pygame.K_s:
                     self.state = STATE_SETTINGS
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                # Nút bắt đầu
+                start_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 408, 260, 42)
+                if start_rect.collidepoint(mx, my):
+                    self.start_new_game()
+                    return
+                # Nút Tiếp tục (nếu có save)
+                if os.path.exists("save.json"):
+                    cont_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 460, 260, 42)
+                    if cont_rect.collidepoint(mx, my):
+                        if load_game(self):
+                            self.state = STATE_PLAYING
+                        return
+                # Nút Cài đặt
+                settings_y = 512 if os.path.exists("save.json") else 460
+                settings_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, settings_y, 260, 42)
+                if settings_rect.collidepoint(mx, my):
+                    self.state = STATE_SETTINGS
             return
 
         if self.state == STATE_SETTINGS:
+            rects = self.ui.get_settings_rects(SCREEN_WIDTH, SCREEN_HEIGHT)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self.state = STATE_MENU if self.player is None else STATE_PAUSE
-                elif event.key == pygame.K_1:
-                    import sound
-                    sound.SFX_VOLUME = max(0.0, sound.SFX_VOLUME - 0.1)
-                elif event.key == pygame.K_2:
-                    import sound
-                    sound.SFX_VOLUME = min(1.0, sound.SFX_VOLUME + 0.1)
-                elif event.key == pygame.K_3:
-                    import sound
-                    sound.MUSIC_VOLUME = max(0.0, sound.MUSIC_VOLUME - 0.1)
-                    pygame.mixer.music.set_volume(sound.MUSIC_VOLUME)
-                elif event.key == pygame.K_4:
-                    import sound
-                    sound.MUSIC_VOLUME = min(1.0, sound.MUSIC_VOLUME + 0.1)
-                    pygame.mixer.music.set_volume(sound.MUSIC_VOLUME)
+                    self._dragging_sfx = False
+                    self._dragging_bgm = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                # Close button
+                if rects['close'].collidepoint(mx, my):
+                    self.state = STATE_MENU if self.player is None else STATE_PAUSE
+                # Mute buttons
+                elif rects['sfx_mute'].collidepoint(mx, my):
+                    self.sfx_muted = not self.sfx_muted
+                    sound.SFX_VOLUME = 0.0 if self.sfx_muted else 0.45
+                elif rects['bgm_mute'].collidepoint(mx, my):
+                    self.bgm_muted = not self.bgm_muted
+                    sound.MUSIC_VOLUME = 0.0 if self.bgm_muted else 0.20
+                    sound.set_music_volume(sound.MUSIC_VOLUME)
+                # Start drag on track
+                elif rects['sfx_track'].inflate(0, 20).collidepoint(mx, my):
+                    self._dragging_sfx = True
+                elif rects['bgm_track'].inflate(0, 20).collidepoint(mx, my):
+                    self._dragging_bgm = True
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                self._dragging_sfx = False
+                self._dragging_bgm = False
+            elif event.type == pygame.MOUSEMOTION:
+                mx, my = event.pos
+                if self._dragging_sfx:
+                    tr = rects['sfx_track']
+                    ratio = max(0.0, min(1.0, (mx - tr.x) / tr.width))
+                    sound.SFX_VOLUME = round(ratio, 2)
+                    self.sfx_muted = (ratio == 0.0)
+                elif self._dragging_bgm:
+                    tr = rects['bgm_track']
+                    ratio = max(0.0, min(1.0, (mx - tr.x) / tr.width))
+                    sound.MUSIC_VOLUME = round(ratio, 2)
+                    self.bgm_muted = (ratio == 0.0)
+                    sound.set_music_volume(sound.MUSIC_VOLUME)
             return
 
         if self.state in (STATE_CHAPTER_INTRO, STATE_DIALOGUE):
@@ -1067,6 +1115,25 @@ class GameState:
                         self.ui.action_log.add("Game Saved!", YELLOW)
                     self.state = STATE_PLAYING
                 elif event.key == pygame.K_q:
+                    return "QUIT"
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
+                # Danh sách nút Pause (khớp với vị trí trong _render_pause)
+                resume_rect  = pygame.Rect(cx - 120, cy + 5,  240, 34)
+                save_rect    = pygame.Rect(cx - 120, cy + 44, 240, 34)
+                settings_rect = pygame.Rect(cx - 120, cy + 83, 240, 34)
+                quit_rect    = pygame.Rect(cx - 120, cy + 122, 240, 34)
+                if resume_rect.collidepoint(mx, my):
+                    self.state = STATE_PLAYING
+                elif save_rect.collidepoint(mx, my):
+                    save_game(self)
+                    if hasattr(self.ui, 'action_log'):
+                        self.ui.action_log.add("Game Saved!", YELLOW)
+                    self.state = STATE_PLAYING
+                elif settings_rect.collidepoint(mx, my):
+                    self.state = STATE_SETTINGS
+                elif quit_rect.collidepoint(mx, my):
                     return "QUIT"
             return
 
@@ -1282,6 +1349,12 @@ class GameState:
             if self.boss and self.boss.alive:
                 self.ui.render_boss_hp_bar(surface, self.boss)
 
+            # AI debug overlay (vẽ trước HUD)
+            if self.debug_ai:
+                self.ui.render_algo_overlay(
+                    surface, self.enemies, self.boss, self.camera, self.tile_map)
+                self.ui.render_ai_legend(surface)
+
             # Auto-play indicator
             if self.auto_play:
                 now = pygame.time.get_ticks()
@@ -1310,7 +1383,9 @@ class GameState:
             self._render_pause(surface)
 
         elif self.state == STATE_SETTINGS:
-            self._render_settings(surface)
+            self.ui.render_settings_mouse(
+                surface, sound.SFX_VOLUME, sound.MUSIC_VOLUME,
+                self.sfx_muted, self.bgm_muted)
 
         elif self.state == STATE_GAME_OVER:
             self._render_game_over(surface)
@@ -1403,20 +1478,38 @@ class GameState:
             text.set_alpha(int(fade))
             surface.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, 310 + i * 24))
 
-        # Start prompt — pulsing
-        pulse = 0.5 + 0.5 * math.sin(t * 0.06)
-        start_alpha = int(120 + 135 * pulse)
-        sc = (int(200 + 55 * pulse), int(190 + 50 * pulse), int(100 + 80 * pulse))
-        start_text = "▶ ENTER: Bắt Đầu | C: Tiếp Tục | S: Cài Đặt ◀" if os.path.exists("save.json") else "▶ ENTER: Bắt Đầu | S: Cài Đặt ◀"
-        start = self._big_font.render(start_text, True, sc)
-        start.set_alpha(start_alpha)
-        surface.blit(start, (SCREEN_WIDTH // 2 - start.get_width() // 2, 420))
+        # Menu buttons
+        has_save = os.path.exists("save.json")
+        mx_cur, my_cur = pygame.mouse.get_pos()
 
-        # Controls panel
-        ctrl_panel = pygame.Surface((520, 65), pygame.SRCALPHA)
+        def draw_menu_btn(label, rect, base_color, hover_color):
+            hovered = rect.collidepoint(mx_cur, my_cur)
+            col = hover_color if hovered else base_color
+            btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            btn_surf.fill((*col, 200))
+            pygame.draw.rect(btn_surf, (200, 190, 255, 220), (0, 0, rect.width, rect.height), 2, 10)
+            if hovered:
+                glow = pygame.Surface((rect.width + 12, rect.height + 12), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*col, 40), (0, 0, glow.get_width(), glow.get_height()), 0, 12)
+                surface.blit(glow, (rect.x - 6, rect.y - 6))
+            surface.blit(btn_surf, (rect.topleft))
+            txt = self._big_font.render(label, True, (240, 235, 255) if hovered else (200, 195, 230))
+            surface.blit(txt, (rect.x + rect.width // 2 - txt.get_width() // 2,
+                               rect.y + rect.height // 2 - txt.get_height() // 2))
+
+        cx_btn = SCREEN_WIDTH // 2 - 130
+        draw_menu_btn("▶  Bắt Đầu",  pygame.Rect(cx_btn, 408, 260, 42), (40, 28, 70), (80, 50, 130))
+        if has_save:
+            draw_menu_btn("↺  Tiếp Tục", pygame.Rect(cx_btn, 460, 260, 42), (28, 40, 70), (40, 70, 140))
+            draw_menu_btn("⚙  Cài Đặt",  pygame.Rect(cx_btn, 512, 260, 42), (25, 35, 55), (45, 60, 100))
+        else:
+            draw_menu_btn("⚙  Cài Đặt",  pygame.Rect(cx_btn, 460, 260, 42), (25, 35, 55), (45, 60, 100))
+
+        # Controls hint (small, below buttons)
+        ctrl_panel = pygame.Surface((520, 50), pygame.SRCALPHA)
         ctrl_panel.fill((15, 10, 30, 100))
-        pygame.draw.rect(ctrl_panel, (60, 50, 90, 120), (0, 0, 520, 65), 1, 8)
-        surface.blit(ctrl_panel, (SCREEN_WIDTH // 2 - 260, 500))
+        pygame.draw.rect(ctrl_panel, (60, 50, 90, 120), (0, 0, 520, 50), 1, 8)
+        surface.blit(ctrl_panel, (SCREEN_WIDTH // 2 - 260, 575))
         controls = [
             ("WASD", "Di chuyển"), ("SPACE", "Tấn công"), ("Q", "Dash"),
             ("R", "AoE"), ("F", "Nhặt đồ"), ("I", "Inv"), ("ESC", "Pause"),
@@ -1424,48 +1517,63 @@ class GameState:
         for i, (key, desc) in enumerate(controls):
             kx = SCREEN_WIDTH // 2 - 240 + i * 73
             key_text = self._small_font.render(key, True, YELLOW)
-            surface.blit(key_text, (kx, 510))
+            surface.blit(key_text, (kx, 583))
             desc_text = self._small_font.render(desc, True, (90, 85, 120))
-            surface.blit(desc_text, (kx, 526))
+            surface.blit(desc_text, (kx, 597))
 
         ver = self._small_font.render("v1.0 — Pygame 2D RPG", True, (50, 45, 70))
         surface.blit(ver, (SCREEN_WIDTH - ver.get_width() - 10, SCREEN_HEIGHT - 20))
 
     def _render_pause(self, surface):
-        """Vẽ màn hình pause — glassmorphism."""
+        """Vẽ màn hình pause với các nút click."""
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
         surface.blit(overlay, (0, 0))
 
-        pw, ph = 320, 200
+        pw, ph = 320, 270
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
-        panel.fill((15, 12, 30, 200))
+        panel.fill((15, 12, 30, 210))
         pygame.draw.rect(panel, (100, 80, 160, 180), (0, 0, pw, ph), 2, 12)
         for i in range(3):
             pygame.draw.line(panel, (160, 140, 220, 30 - i * 10), (8, i + 2), (pw - 8, i + 2))
-        surface.blit(panel, (SCREEN_WIDTH // 2 - pw // 2, SCREEN_HEIGHT // 2 - ph // 2))
+        px = SCREEN_WIDTH // 2 - pw // 2
+        py_panel = SCREEN_HEIGHT // 2 - ph // 2
+        surface.blit(panel, (px, py_panel))
 
         title = self._title_font.render("PAUSE", True, (200, 190, 240))
         surface.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2,
-                             SCREEN_HEIGHT // 2 - 60))
+                             py_panel + 16))
 
         sep_w = 200
         sep = pygame.Surface((sep_w, 1), pygame.SRCALPHA)
         for i in range(sep_w):
             a = int(80 * (1 - abs(i / sep_w - 0.5) * 2))
             sep.set_at((i, 0), (140, 120, 200, a))
-        surface.blit(sep, (SCREEN_WIDTH // 2 - sep_w // 2, SCREEN_HEIGHT // 2))
+        surface.blit(sep, (SCREEN_WIDTH // 2 - sep_w // 2, py_panel + 70))
 
-        opts = [
-            ("[ESC] Tiếp tục", (180, 230, 180)),
-            ("[F] Lưu Game", YELLOW),
-            ("[S] Cài đặt", (100, 200, 255)),
-            ("[Q] Thoát", (230, 150, 150))
-        ]
-        for i, (text, color) in enumerate(opts):
-            rendered = self._font.render(text, True, color)
-            surface.blit(rendered, (SCREEN_WIDTH // 2 - rendered.get_width() // 2,
-                                    SCREEN_HEIGHT // 2 + 10 + i * 25))
+        cx = SCREEN_WIDTH // 2
+        cy = SCREEN_HEIGHT // 2
+        mx_cur, my_cur = pygame.mouse.get_pos()
+
+        def draw_pause_btn(label, rect, base_col, hover_col):
+            hov = rect.collidepoint(mx_cur, my_cur)
+            col = hover_col if hov else base_col
+            btn = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            btn.fill((*col, 200))
+            pygame.draw.rect(btn, (180, 170, 220, 180), (0, 0, rect.width, rect.height), 1, 8)
+            surface.blit(btn, (rect.topleft))
+            txt = self._font.render(label, True, (240, 235, 255) if hov else (185, 180, 220))
+            surface.blit(txt, (rect.x + rect.width // 2 - txt.get_width() // 2,
+                               rect.y + rect.height // 2 - txt.get_height() // 2))
+
+        draw_pause_btn("▶  Tiếp tục",     pygame.Rect(cx - 120, cy + 5,  240, 32), (30, 50, 30),  (50, 100, 50))
+        draw_pause_btn("💾  Lưu Game",      pygame.Rect(cx - 120, cy + 44, 240, 32), (50, 50, 20),  (100, 100, 30))
+        draw_pause_btn("⚙  Cài Đặt",       pygame.Rect(cx - 120, cy + 83, 240, 32), (20, 40, 60),  (40, 80, 130))
+        draw_pause_btn("❌  Thoát Game",     pygame.Rect(cx - 120, cy + 122, 240, 32), (60, 20, 20), (130, 40, 40))
+
+        hint = self._small_font.render("ESC: Tiếp tục  •  Click để chọn", True, (90, 85, 120))
+        surface.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2,
+                            SCREEN_HEIGHT // 2 + ph // 2 - 20))
 
     def _render_settings(self, surface):
         """Vẽ màn hình Cài đặt."""
