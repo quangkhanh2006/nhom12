@@ -145,19 +145,26 @@ class Item:
             pygame.draw.circle(surface, color, (cx, cy), 8, 3)
 
 
-def roll_rarity(boss_drop=False):
-    """Random rarity item theo tỉ lệ rơi."""
+def roll_rarity(boss_drop=False, diff_cfg=None):
+    """Random rarity item theo tỉ lệ rơi, cộng bonus từ độ khó."""
     if boss_drop:
         return RARITY_EPIC
     roll = random.random()
-    if roll < DROP_RATES[RARITY_EPIC]:
+    
+    rare_bonus = diff_cfg["rare_bonus"] if diff_cfg else 0.0
+    epic_bonus = diff_cfg["epic_bonus"] if diff_cfg else 0.0
+    
+    epic_chance = DROP_RATES[RARITY_EPIC] + epic_bonus
+    rare_chance = DROP_RATES[RARITY_RARE] + rare_bonus
+    
+    if roll < epic_chance:
         return RARITY_EPIC
-    elif roll < DROP_RATES[RARITY_EPIC] + DROP_RATES[RARITY_RARE]:
+    elif roll < epic_chance + rare_chance:
         return RARITY_RARE
     return RARITY_COMMON
 
 
-def generate_loot(x, y, boss_drop=False, is_crate=False):
+def generate_loot(x, y, boss_drop=False, is_crate=False, diff_cfg=None):
     """Tạo item loot tại vị trí cho trước. Thùng gỗ ưu tiên rớt vàng/máu."""
     if is_crate:
         # Crate drop rates
@@ -183,5 +190,5 @@ def generate_loot(x, y, boss_drop=False, is_crate=False):
         return Item(EQUIP_POTION_MP, x=x, y=y)
         
     equip_type = random.choice([EQUIP_WEAPON, EQUIP_ARMOR, EQUIP_BOOTS, EQUIP_RING])
-    rarity = roll_rarity(boss_drop)
+    rarity = roll_rarity(boss_drop, diff_cfg)
     return Item(equip_type, rarity, x, y)

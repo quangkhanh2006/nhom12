@@ -33,15 +33,21 @@ class Boss:
         summoned_enemies (list): Quái được triệu hồi
     """
 
-    def __init__(self, x, y):
+    def __init__(self, x, y, difficulty_cfg=None):
         self.x = float(x)
         self.y = float(y)
         self.size = BOSS_SIZE
-        self.max_hp = BOSS_HP
-        self.hp = BOSS_HP
+        self.difficulty_cfg = difficulty_cfg
+        
+        hp_mult = difficulty_cfg["hp_mult"] if difficulty_cfg else 1.0
+        dmg_mult = difficulty_cfg["dmg_mult"] if difficulty_cfg else 1.0
+        self.speed_mult = difficulty_cfg["speed_mult"] if difficulty_cfg else 1.0
+
+        self.max_hp = int(BOSS_HP * hp_mult)
+        self.hp = self.max_hp
         self.target_hp = self.hp
-        self.damage = BOSS_DAMAGE
-        self.speed = BOSS_SPEED_P1
+        self.damage = int(BOSS_DAMAGE * dmg_mult)
+        self.speed = BOSS_SPEED_P1 * self.speed_mult
         self.detect_range = BOSS_DETECT_RANGE
         self.alive = True
         self.phase = 1
@@ -116,14 +122,14 @@ class Boss:
         # Phase transition: HP < 50%
         if self.phase == 1 and self.hp <= self.max_hp * BOSS_PHASE2_THRESHOLD:
             self.phase = 2
-            self.speed = BOSS_SPEED_P2
+            self.speed = BOSS_SPEED_P2 * self.speed_mult
             self.phase_transition = True
             self.transition_timer = pygame.time.get_ticks()
 
         # Phase 3 Rage: HP < 25%
         if self.phase == 2 and self.hp <= self.max_hp * BOSS_PHASE3_THRESHOLD:
             self.phase = 3
-            self.speed = BOSS_SPEED_P3
+            self.speed = BOSS_SPEED_P3 * self.speed_mult
             self.attack_cooldown = 600  # Melee nhanh gấp đôi
             self.phase_transition = True
             self.transition_timer = pygame.time.get_ticks()
@@ -438,7 +444,7 @@ class Boss:
 
     def drop_loot(self):
         """Boss luôn rơi Epic item."""
-        return generate_loot(self.x, self.y, boss_drop=True)
+        return generate_loot(self.x, self.y, boss_drop=True, diff_cfg=self.difficulty_cfg)
 
     def render(self, surface, camera):
         """Vẽ boss Malphas."""

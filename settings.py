@@ -426,3 +426,38 @@ PET_PICKUP_RANGE = 20         # Tầm nhặt item
 COLOR_PET = (255, 230, 100)   # Màu vàng kim
 COLOR_PET_GLOW = (255, 200, 50)
 
+# ======================== DIFFICULTY ========================
+DIFFICULTY_CONFIGS = {
+    "Easy": {
+        "hp_mult": 0.7,
+        "dmg_mult": 0.7,
+        "speed_mult": 0.85,
+        "rare_bonus": -0.05,
+        "epic_bonus": -0.02,
+        "color": (50, 200, 50)  # GREEN
+    },
+    "Normal": {
+        "hp_mult": 1.0,
+        "dmg_mult": 1.0,
+        "speed_mult": 1.0,
+        "rare_bonus": 0.0,
+        "epic_bonus": 0.0,
+        "color": (255, 215, 0)  # YELLOW
+    },
+    "Hard": {
+        "hp_mult": 1.5,
+        "dmg_mult": 1.4,
+        "speed_mult": 1.2,
+        "rare_bonus": 0.10,
+        "epic_bonus": 0.04,
+        "color": (255, 140, 0)  # ORANGE
+    },
+    "Nightmare": {
+        "hp_mult": 2.2,
+        "dmg_mult": 2.0,
+        "speed_mult": 1.4,
+        "rare_bonus": 0.20,
+        "epic_bonus": 0.10,
+        "color": (200, 50, 50)  # RED
+    }
+}

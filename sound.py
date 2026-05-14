@@ -393,6 +393,36 @@ def _make_ambient_loop(chapter: int) -> pygame.mixer.Sound:
 
 
 
+def _make_menu_ambient() -> pygame.mixer.Sound:
+    """Tạo nhạc nền ambient cho màn hình Menu (chậm, mystical, nhẹ nhàng)."""
+    dur = 6.0
+    sr = SAMPLE_RATE
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    
+    # Ethereal pad A minor
+    pad = (_sine(220.0, dur) * 0.30   # A3
+           + _sine(261.6, dur) * 0.20 # C4
+           + _sine(329.6, dur) * 0.15)# E4
+    pad_lfo = (0.7 + 0.3 * np.sin(2 * np.pi * 0.1 * t)).astype(np.float32)
+    
+    # Wind/Sweep mỏng
+    sweep = _noise(dur) * 0.05
+    sweep_env = (0.5 + 0.5 * np.sin(2 * np.pi * 0.2 * t)).astype(np.float32)
+    
+    # Chuông nhỏ nhẹ
+    bell = _sine(880.0, dur) * 0.08
+    bell_env = np.exp(-t * 0.8) * np.abs(np.sin(2 * np.pi * t / 2.0))
+    
+    arr = (pad * pad_lfo + sweep * sweep_env + bell * bell_env).astype(np.float32)
+    
+    # Crossfade
+    fade_len = int(0.5 * sr)
+    arr[:fade_len] *= np.linspace(0, 1, fade_len).astype(np.float32)
+    arr[-fade_len:] *= np.linspace(1, 0, fade_len).astype(np.float32)
+    
+    return _make_buffer(np.clip(arr, -1, 1))
+
 # ======================== BUILD TẤT CẢ ========================
 
 def _build_all_sounds():
@@ -435,6 +465,14 @@ def _build_all_sounds():
         except Exception as e:
             print(f"[Sound] Lỗi tạo ambient_{ch}: {e}")
 
+    # Ambient cho Menu
+    try:
+        snd_menu = _make_menu_ambient()
+        snd_menu.set_volume(MUSIC_VOLUME)
+        _sounds["ambient_menu"] = snd_menu
+    except Exception as e:
+        print(f"[Sound] Lỗi tạo ambient_menu: {e}")
+
 
 # ======================== API PHÁT NHẠC ========================
 
@@ -454,8 +492,8 @@ def play(name: str, volume: float = None):
         snd.play()
 
 
-def play_music(chapter: int):
-    """Phát nhạc nền ambient loop cho chương. Không phát lại nếu đang phát cùng chương."""
+def play_music(chapter):
+    """Phát nhạc nền ambient loop cho chương/menu. Không phát lại nếu đang phát cùng loại."""
     global _current_chapter_music
     if not _initialized:
         return

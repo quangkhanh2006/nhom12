@@ -46,6 +46,9 @@ STATE_CREDITS = "credits"
 STATE_CHAPTER_INTRO = "chapter_intro"
 STATE_DIALOGUE = "dialogue"
 STATE_SETTINGS = "settings"
+STATE_DIFFICULTY_SELECT = "difficulty_select"
+
+import icons
 
 
 class GameState:
@@ -138,11 +141,13 @@ class GameState:
         # Debug AI
         self.debug_ai = False
 
-        # Settings mouse state
         self.sfx_muted = False
         self.bgm_muted = False
         self._dragging_sfx = False
         self._dragging_bgm = False
+
+        # Difficulty
+        self.difficulty = "Normal"
 
     def _init_fonts(self):
         if self._font is None:
@@ -205,10 +210,14 @@ class GameState:
                 bx, by = self.tile_map.spawn_points[0]
             else:
                 bx, by = 25 * 32, 25 * 32
-            self.boss = Boss(bx, by)
+            from settings import DIFFICULTY_CONFIGS
+            diff_cfg = DIFFICULTY_CONFIGS.get(self.difficulty)
+            self.boss = Boss(bx, by, difficulty_cfg=diff_cfg)
         else:
             # Spawn quái theo config chương
             cfg = CHAPTER_ENEMIES.get(chapter, {})
+            from settings import DIFFICULTY_CONFIGS
+            diff_cfg = DIFFICULTY_CONFIGS.get(self.difficulty)
             spawn_idx = 0
             spawns = self.tile_map.spawn_points
 
@@ -228,7 +237,7 @@ class GameState:
                             if self.tile_map.is_walkable(_ex, _ey):
                                 ex, ey = _ex, _ey
                                 break
-                    enemy = Enemy(ex, ey, etype)
+                    enemy = Enemy(ex, ey, etype, difficulty_cfg=diff_cfg)
                     # NEW GAME+: Scale quái mạnh hơn
                     if self.ng_plus:
                         scale = 1 + self.ng_plus_count * 0.5
@@ -395,7 +404,9 @@ class GameState:
                 self.screen_fx.shake(6, 200)
             # Handle summons
             for etype, sx, sy in self.boss.get_pending_summons():
-                self.enemies.append(Enemy(sx, sy, etype))
+                from settings import DIFFICULTY_CONFIGS
+                diff_cfg = DIFFICULTY_CONFIGS.get(self.difficulty)
+                self.enemies.append(Enemy(sx, sy, etype, difficulty_cfg=diff_cfg))
 
         # BUG FIX: Reset attack hit flag khi attack kết thúc
         if not self.player.is_attacking:
@@ -592,7 +603,9 @@ class GameState:
                 sound.play("hit")
                 if crate.hp <= 0:
                     crate.alive = False
-                    loot = generate_loot(crate.x, crate.y, is_crate=True)
+                    from settings import DIFFICULTY_CONFIGS
+                    diff_cfg = DIFFICULTY_CONFIGS.get(self.difficulty)
+                    loot = generate_loot(crate.x, crate.y, is_crate=True, diff_cfg=diff_cfg)
                     if loot:
                         self.items.append(loot)
 
@@ -640,7 +653,9 @@ class GameState:
                     crate.hit_flash = 5
                     if crate.hp <= 0:
                         crate.alive = False
-                        loot = generate_loot(crate.x, crate.y, is_crate=True)
+                        from settings import DIFFICULTY_CONFIGS
+                        diff_cfg = DIFFICULTY_CONFIGS.get(self.difficulty)
+                        loot = generate_loot(crate.x, crate.y, is_crate=True, diff_cfg=diff_cfg)
                         if loot: self.items.append(loot)
 
         if self.boss and self.boss.alive:
@@ -972,7 +987,7 @@ class GameState:
         if self.state == STATE_MENU:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_RETURN:
-                    self.start_new_game()
+                    self.state = STATE_DIFFICULTY_SELECT
                 elif event.key == pygame.K_c and os.path.exists("save.json"):
                     if load_game(self):
                         self.state = STATE_PLAYING
@@ -983,7 +998,7 @@ class GameState:
                 # Nút bắt đầu
                 start_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, 408, 260, 42)
                 if start_rect.collidepoint(mx, my):
-                    self.start_new_game()
+                    self.state = STATE_DIFFICULTY_SELECT
                     return
                 # Nút Tiếp tục (nếu có save)
                 if os.path.exists("save.json"):
@@ -997,6 +1012,33 @@ class GameState:
                 settings_rect = pygame.Rect(SCREEN_WIDTH // 2 - 130, settings_y, 260, 42)
                 if settings_rect.collidepoint(mx, my):
                     self.state = STATE_SETTINGS
+            return
+
+        if self.state == STATE_DIFFICULTY_SELECT:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.state = STATE_MENU
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+                # Close button
+                close_rect = pygame.Rect(SCREEN_WIDTH // 2 + 300, SCREEN_HEIGHT // 2 - 220, 40, 40)
+                if close_rect.collidepoint(mx, my):
+                    self.state = STATE_MENU
+                    return
+                # Difficulty cards
+                from settings import DIFFICULTY_CONFIGS
+                cards = list(DIFFICULTY_CONFIGS.keys())
+                card_w, card_h = 160, 240
+                gap = 20
+                total_w = len(cards) * card_w + (len(cards) - 1) * gap
+                start_x = SCREEN_WIDTH // 2 - total_w // 2
+                cy = SCREEN_HEIGHT // 2 - 50
+                for i, diff in enumerate(cards):
+                    rect = pygame.Rect(start_x + i * (card_w + gap), cy, card_w, card_h)
+                    if rect.collidepoint(mx, my):
+                        self.difficulty = diff
+                        self.start_new_game()
+                        return
             return
 
         if self.state == STATE_SETTINGS:
@@ -1177,10 +1219,12 @@ class GameState:
         """Render toàn bộ game — enhanced visuals."""
         self._init_fonts()
 
-        if self.state == STATE_MENU or (self.state == STATE_SETTINGS and self.player is None):
+        if self.state == STATE_MENU or (self.state == STATE_SETTINGS and self.player is None) or self.state == STATE_DIFFICULTY_SELECT:
             self._render_menu(surface)
             if self.state == STATE_SETTINGS:
                 self._render_settings(surface)
+            elif self.state == STATE_DIFFICULTY_SELECT:
+                self._render_difficulty_select(surface)
             return
 
         # Nền
@@ -1401,6 +1445,9 @@ class GameState:
 
     def _render_menu(self, surface):
         """Vẽ menu chính — cinematic design."""
+        if sound._current_chapter_music != "menu":
+            sound.play_music("menu")
+
         self.menu_time += 1
         t = self.menu_time
 
@@ -1482,7 +1529,7 @@ class GameState:
         has_save = os.path.exists("save.json")
         mx_cur, my_cur = pygame.mouse.get_pos()
 
-        def draw_menu_btn(label, rect, base_color, hover_color):
+        def draw_menu_btn(label, rect, base_color, hover_color, icon_fn=None):
             hovered = rect.collidepoint(mx_cur, my_cur)
             col = hover_color if hovered else base_color
             btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
@@ -1493,17 +1540,27 @@ class GameState:
                 pygame.draw.rect(glow, (*col, 40), (0, 0, glow.get_width(), glow.get_height()), 0, 12)
                 surface.blit(glow, (rect.x - 6, rect.y - 6))
             surface.blit(btn_surf, (rect.topleft))
+            
+            # Vẽ icon nếu có
+            text_x = rect.x + rect.width // 2
+            if icon_fn:
+                ix = rect.x + 20
+                iy = rect.y + rect.height // 2 - 10
+                icon_fn(surface, ix, iy, 20, (240, 235, 255) if hovered else (200, 195, 230))
+                # text_x lùi lại xíu
+                text_x += 10
+                
             txt = self._big_font.render(label, True, (240, 235, 255) if hovered else (200, 195, 230))
-            surface.blit(txt, (rect.x + rect.width // 2 - txt.get_width() // 2,
+            surface.blit(txt, (text_x - txt.get_width() // 2,
                                rect.y + rect.height // 2 - txt.get_height() // 2))
 
         cx_btn = SCREEN_WIDTH // 2 - 130
-        draw_menu_btn("▶  Bắt Đầu",  pygame.Rect(cx_btn, 408, 260, 42), (40, 28, 70), (80, 50, 130))
+        draw_menu_btn("Bắt Đầu",  pygame.Rect(cx_btn, 408, 260, 42), (40, 28, 70), (80, 50, 130), icon_fn=icons.draw_sword)
         if has_save:
-            draw_menu_btn("↺  Tiếp Tục", pygame.Rect(cx_btn, 460, 260, 42), (28, 40, 70), (40, 70, 140))
-            draw_menu_btn("⚙  Cài Đặt",  pygame.Rect(cx_btn, 512, 260, 42), (25, 35, 55), (45, 60, 100))
+            draw_menu_btn("Tiếp Tục", pygame.Rect(cx_btn, 460, 260, 42), (28, 40, 70), (40, 70, 140), icon_fn=icons.draw_refresh)
+            draw_menu_btn("Cài Đặt",  pygame.Rect(cx_btn, 512, 260, 42), (25, 35, 55), (45, 60, 100), icon_fn=icons.draw_gear)
         else:
-            draw_menu_btn("⚙  Cài Đặt",  pygame.Rect(cx_btn, 460, 260, 42), (25, 35, 55), (45, 60, 100))
+            draw_menu_btn("Cài Đặt",  pygame.Rect(cx_btn, 460, 260, 42), (25, 35, 55), (45, 60, 100), icon_fn=icons.draw_gear)
 
         # Controls hint (small, below buttons)
         ctrl_panel = pygame.Surface((520, 50), pygame.SRCALPHA)
@@ -1555,25 +1612,103 @@ class GameState:
         cy = SCREEN_HEIGHT // 2
         mx_cur, my_cur = pygame.mouse.get_pos()
 
-        def draw_pause_btn(label, rect, base_col, hover_col):
+        def draw_pause_btn(label, rect, base_col, hover_col, icon_fn=None):
             hov = rect.collidepoint(mx_cur, my_cur)
             col = hover_col if hov else base_col
             btn = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
             btn.fill((*col, 200))
             pygame.draw.rect(btn, (180, 170, 220, 180), (0, 0, rect.width, rect.height), 1, 8)
             surface.blit(btn, (rect.topleft))
+            
+            text_x = rect.x + rect.width // 2
+            if icon_fn:
+                ix = rect.x + 20
+                iy = rect.y + rect.height // 2 - 10
+                icon_fn(surface, ix, iy, 20, (240, 235, 255) if hov else (185, 180, 220))
+                text_x += 10
+            
             txt = self._font.render(label, True, (240, 235, 255) if hov else (185, 180, 220))
-            surface.blit(txt, (rect.x + rect.width // 2 - txt.get_width() // 2,
+            surface.blit(txt, (text_x - txt.get_width() // 2,
                                rect.y + rect.height // 2 - txt.get_height() // 2))
 
-        draw_pause_btn("▶  Tiếp tục",     pygame.Rect(cx - 120, cy + 5,  240, 32), (30, 50, 30),  (50, 100, 50))
-        draw_pause_btn("💾  Lưu Game",      pygame.Rect(cx - 120, cy + 44, 240, 32), (50, 50, 20),  (100, 100, 30))
-        draw_pause_btn("⚙  Cài Đặt",       pygame.Rect(cx - 120, cy + 83, 240, 32), (20, 40, 60),  (40, 80, 130))
-        draw_pause_btn("❌  Thoát Game",     pygame.Rect(cx - 120, cy + 122, 240, 32), (60, 20, 20), (130, 40, 40))
+        draw_pause_btn("Tiếp tục",     pygame.Rect(cx - 120, cy + 5,  240, 32), (30, 50, 30),  (50, 100, 50), icon_fn=icons.draw_play)
+        draw_pause_btn("Lưu Game",      pygame.Rect(cx - 120, cy + 44, 240, 32), (50, 50, 20),  (100, 100, 30), icon_fn=icons.draw_save)
+        draw_pause_btn("Cài Đặt",       pygame.Rect(cx - 120, cy + 83, 240, 32), (20, 40, 60),  (40, 80, 130), icon_fn=icons.draw_gear)
+        draw_pause_btn("Thoát Game",     pygame.Rect(cx - 120, cy + 122, 240, 32), (60, 20, 20), (130, 40, 40), icon_fn=icons.draw_close)
 
         hint = self._small_font.render("ESC: Tiếp tục  •  Click để chọn", True, (90, 85, 120))
         surface.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2,
                             SCREEN_HEIGHT // 2 + ph // 2 - 20))
+
+    def _render_difficulty_select(self, surface):
+        """Vẽ màn hình chọn độ khó."""
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        surface.blit(overlay, (0, 0))
+
+        title = self._title_font.render("CHỌN ĐỘ KHÓ", True, (255, 215, 0))
+        surface.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 120))
+
+        from settings import DIFFICULTY_CONFIGS
+        cards = list(DIFFICULTY_CONFIGS.keys())
+        card_w, card_h = 160, 240
+        gap = 20
+        total_w = len(cards) * card_w + (len(cards) - 1) * gap
+        start_x = SCREEN_WIDTH // 2 - total_w // 2
+        cy = SCREEN_HEIGHT // 2 - 50
+
+        mx, my = pygame.mouse.get_pos()
+
+        for i, diff in enumerate(cards):
+            cfg = DIFFICULTY_CONFIGS[diff]
+            rect = pygame.Rect(start_x + i * (card_w + gap), cy, card_w, card_h)
+            hov = rect.collidepoint(mx, my)
+
+            # Card BG
+            card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+            bg_alpha = 200 if hov else 120
+            card_surf.fill((20, 20, 30, bg_alpha))
+            
+            border_col = cfg["color"] if hov else (100, 100, 120)
+            pygame.draw.rect(card_surf, border_col, (0, 0, card_w, card_h), 2 if hov else 1, 10)
+            
+            if hov:
+                glow = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*cfg["color"], 30), (0, 0, card_w, card_h), 0, 10)
+                card_surf.blit(glow, (0, 0))
+
+            surface.blit(card_surf, rect.topleft)
+
+            # Icon
+            icons.draw_shield(surface, rect.x + card_w//2 - 20, rect.y + 20, 40, cfg["color"] if hov else (150, 150, 150))
+
+            # Name
+            name_txt = self._big_font.render(diff, True, cfg["color"] if hov else (200, 200, 200))
+            surface.blit(name_txt, (rect.x + card_w//2 - name_txt.get_width()//2, rect.y + 75))
+
+            # Stats
+            stat_y = rect.y + 120
+            def draw_stat(text, val_str, is_pos):
+                s1 = self._small_font.render(text, True, (150, 150, 150))
+                s2 = self._small_font.render(val_str, True, (100, 255, 100) if is_pos else (255, 100, 100) if is_pos is False else (200, 200, 200))
+                surface.blit(s1, (rect.x + 10, stat_y))
+                surface.blit(s2, (rect.x + card_w - 10 - s2.get_width(), stat_y))
+            
+            draw_stat("HP/Dmg:", f"x{cfg['hp_mult']}", cfg['hp_mult'] < 1.0 if cfg['hp_mult'] != 1.0 else None)
+            stat_y += 25
+            draw_stat("Speed:", f"x{cfg['speed_mult']}", cfg['speed_mult'] < 1.0 if cfg['speed_mult'] != 1.0 else None)
+            stat_y += 25
+            draw_stat("Rare:", f"{int(cfg['rare_bonus']*100):+d}%", cfg['rare_bonus'] > 0 if cfg['rare_bonus'] != 0 else None)
+            stat_y += 25
+            draw_stat("Epic:", f"{int(cfg['epic_bonus']*100):+d}%", cfg['epic_bonus'] > 0 if cfg['epic_bonus'] != 0 else None)
+
+        # Close button
+        close_rect = pygame.Rect(SCREEN_WIDTH // 2 + 300, SCREEN_HEIGHT // 2 - 220, 40, 40)
+        c_hov = close_rect.collidepoint(mx, my)
+        c_col = (255, 100, 100) if c_hov else (150, 100, 100)
+        pygame.draw.rect(surface, (40, 20, 20) if c_hov else (30, 20, 20), close_rect, 0, 8)
+        pygame.draw.rect(surface, c_col, close_rect, 2, 8)
+        icons.draw_close(surface, close_rect.x + 10, close_rect.y + 10, 20, c_col)
 
     def _render_settings(self, surface):
         """Vẽ màn hình Cài đặt."""

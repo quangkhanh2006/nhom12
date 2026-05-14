@@ -36,10 +36,11 @@ class Enemy:
         path_index (int): Vị trí trên đường đi
     """
 
-    def __init__(self, x, y, enemy_type="soul"):
+    def __init__(self, x, y, enemy_type="soul", difficulty_cfg=None):
         self.x = float(x)
         self.y = float(y)
         self.enemy_type = enemy_type
+        self.difficulty_cfg = difficulty_cfg
         self.size = 24
         self.alive = True
         self.hit_flash = False
@@ -67,11 +68,15 @@ class Enemy:
                        "astar", COLOR_SHADOW, 800),
         }
         cfg = configs.get(enemy_type, configs["soul"])
-        self.max_hp = cfg[0]
-        self.hp = cfg[0]
+        hp_mult = difficulty_cfg["hp_mult"] if difficulty_cfg else 1.0
+        dmg_mult = difficulty_cfg["dmg_mult"] if difficulty_cfg else 1.0
+        speed_mult = difficulty_cfg["speed_mult"] if difficulty_cfg else 1.0
+
+        self.max_hp = int(cfg[0] * hp_mult)
+        self.hp = self.max_hp
         self.target_hp = self.hp  # Dùng cho animation tụt máu
-        self.damage = cfg[1]
-        self.speed = cfg[2]
+        self.damage = int(cfg[1] * dmg_mult)
+        self.speed = cfg[2] * speed_mult
         self.detect_range = cfg[3]
         self.ai_type = cfg[4]
         self.color = cfg[5]
@@ -234,12 +239,9 @@ class Enemy:
                 self.y = max(half, min(MAP_HEIGHT * TILE_SIZE - half, new_y))
 
     def drop_loot(self):
-        """Rơi loot khi chết.
-
-        Returns:
-            Item or None
-        """
-        return generate_loot(self.x, self.y)
+        """Trả về Item rớt ra nếu có."""
+        from item import generate_loot
+        return generate_loot(self.x, self.y, diff_cfg=self.difficulty_cfg)
 
     def render(self, surface, camera):
         """Vẽ kẻ địch."""
